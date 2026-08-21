@@ -3954,6 +3954,475 @@ def deposit_status_api(
 # GET PROVIDER ORDER STATUS
 # ============================================================
 
+def get_provider_order_status(provider_order_id):
+    if not provider_order_id:
+        return {
+            "success": False,
+            "status": "Unknown",
+            "message": "Provider Order ID မရှိပါ။"
+        }
+
+    result = flash_request(
+        "GET",
+        f"/order/{provider_order_id}",
+        {}
+    )
+
+    if not result.get("success"):
+        return {
+            "success": False,
+            "status": "Unknown",
+            "message": "Provider status စစ်လို့မရပါ။",
+            "response": result
+        }
+
+    data = result.get("data") or {}
+
+    if not isinstance(data, dict):
+        return {
+            "success": False,
+            "status": "Unknown",
+            "message": "Provider response မမှန်ပါ။"
+        }
+
+    response_data = data
+
+    if isinstance(data.get("data"), dict):
+        response_data = data["data"]
+
+    provider_status = (
+        response_data.get("status")
+        or response_data.get("order_status")
+        or response_data.get("orderStatus")
+        or data.get("status")
+        or data.get("order_status")
+        or "Unknown"
+    )
+
+    return {
+        "success": True,
+        "status": str(provider_status),
+        "response": data
+    }
+
+
+# ============================================================
+# NORMALIZE ORDER STATUS
+# ============================================================
+
+def normalize_order_status(status):
+    value = str(status or "").strip().lower()
+
+    if value in {
+        "completed",
+        "complete",
+        "success",
+        "successful",
+        "delivered",
+        "delivery_success",
+        "done"
+    }:
+        return "Completed"
+
+    if value in {
+        "failed",
+        "failure",
+        "cancelled",
+        "canceled",
+        "rejected",
+        "error",
+        "refunded"
+    }:
+        return "Failed"
+
+    if value in {
+        "processing",
+        "pending",
+        "in_progress",
+        "in-progress",
+        "queued",
+        "waiting"
+    }:
+        return "Processing"
+
+    return "Processing"
+
+
+# ============================================================
+# REFUND FAILED ORDER
+# ============================================================
+
+def refund_failed_order(order_id):
+    conn = get_db()
+
+    order = conn.execute(
+        """
+        SELECT *
+        FROM orders
+        WHERE id = ?
+        """,
+        (order_id,)
+    ).fetchone()
+
+    conn.close()
+
+    if not order:
+        return {
+            "success": False,
+            "message": "Order မတွေ့ပါ။"
+        }
+
+    if int(order["wallet_charged"] or 0) != 1:
+        return {
+            "success": True,
+            "refunded": False,
+            "message": "Wallet မဖြတ်ထားပါ။ Refund မလိုပါ။"
+        }
+
+    if int(order["refunded"] or 0) == 1:
+        return {
+            "success": True,
+            "refunded": False,
+            "message": "ဒီ Order ကို Refund လုပ်ပြီးပါပြီ။"
+        }
+
+    refund_result = refund_wallet(
+        order["username"],
+        float(order["amount"])
+    )
+
+    if not refund_result.get("success"):
+        return {
+            "success": False,
+            "refunded": False,
+            "message": refund_result.get("message", "Refund မလုပ်နိုင်ပါ။")
+        }
+
+    mark_order_refunded(order_id)
+
+    conn = get_db()
+
+    conn.execute(
+        """
+        UPDATE orders
+        SET
+            status = 'Failed',
+            updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            now(),
+            order_id
+        )
+    )
+
+    conn.commit()
+    conn.close()
+
+    create_notification(
+        order["username"],
+        "💰 Order Refund",
+        f"သင်တင်ထားသော {order['package']} Order #{order_id} မအောင်မြင်သဖြင့် {float(order['amount']):,.0f} Ks ကို Wallet ထဲ ပြန်ထည့်ပေးပြီးပါပြီ။"
+    )
+
+    return {
+        "success": True,
+        "refunded": True,
+        "amount": float(order["amount"]),
+        "balance": refund_result.get("balance")
+    }
+
+
+# ============================================================
+# UPDATE SINGLE ORDER STATUS
+# ============================================================
+
+def update_single_order_status(order_id):
+    conn = get_db()
+
+    order = conn.execute(
+        """
+        SELECT *
+        FROM orders
+        WHERE id = ?
+        """,
+        (order_id,)
+    ).fetchone()
+
+    conn.close()
+
+    if not order:
+        return {
+            "success": False,
+            "message": "Order မတွေ့ပါ။"
+        }
+
+    if not order["provider_order_id"]:
+        return {
+            "success": False,
+            "message": "Provider Order ID မရှိပါ။"
+        }
+
+    if order["status"] in {
+        "Completed",
+        "Failed"
+    }:
+        return {
+            "success": True,
+            "status": order["status"],
+            "message": "Order already finalized."
+        }
+
+    result = get_provider_order_status(
+        order["provider_order_id"]
+    )
+
+    if not result.get("success"):
+        return result
+
+    provider_status = result.get("status", "Unknown")
+    normalized = normalize_order_status(provider_status)
+
+
+    if normalized == "Processing":
+        conn = get_db()
+        conn.execute(
+            """
+            UPDATE orders
+            SET
+                status = 'Processing',
+                provider_status = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                provider_status,
+                now(),
+                order_id
+            )
+        )
+        conn.commit()
+        conn.close()
+
+        return {
+            "success": True,
+            "status": "Processing",
+            "provider_status": provider_status
+        }
+
+
+    if normalized == "Completed":
+        conn = get_db()
+        conn.execute(
+            """
+            UPDATE orders
+            SET
+                status = 'Completed',
+                provider_status = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                provider_status,
+                now(),
+                order_id
+            )
+        )
+        conn.commit()
+        conn.close()
+
+        create_notification(
+            order["username"],
+            "✅ Recharge Completed",
+            f"သင်တင်ထားသော {order['package']} Order #{order_id} ကို In Game ထဲ ဖြည့်ပြီးပါပြီ။"
+        )
+
+        return {
+            "success": True,
+            "status": "Completed",
+            "provider_status": provider_status
+        }
+
+
+    if normalized == "Failed":
+        conn = get_db()
+        conn.execute(
+            """
+            UPDATE orders
+            SET
+                status = 'Failed',
+                provider_status = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                provider_status,
+                now(),
+                order_id
+            )
+        )
+        conn.commit()
+        conn.close()
+
+        refund_result = refund_failed_order(
+            order_id
+        )
+
+        return {
+            "success": refund_result.get("success", True),
+            "status": "Failed",
+            "provider_status": provider_status,
+            "refunded": refund_result.get("refunded", False)
+        }
+
+
+    return {
+        "success": True,
+        "status": normalized,
+        "provider_status": provider_status
+    }
+
+
+# ============================================================
+# CHECK ALL PROCESSING ORDERS
+# ============================================================
+
+def check_processing_orders():
+    conn = get_db()
+
+    orders = conn.execute(
+        """
+        SELECT id
+        FROM orders
+        WHERE status = 'Processing'
+        AND provider_order_id IS NOT NULL
+        AND provider_order_id != ''
+        ORDER BY id ASC
+        LIMIT 50
+        """
+    ).fetchall()
+
+    conn.close()
+
+    results = []
+
+    for row in orders:
+        try:
+            result = update_single_order_status(row["id"])
+            results.append({
+                "order_id": row["id"],
+                "result": result
+            })
+        except Exception as e:
+            print(
+                "[STATUS CHECK ERROR]",
+                row["id"],
+                str(e)
+            )
+
+    return results
+
+
+# ============================================================
+# MANUAL ORDER STATUS API
+# ============================================================
+
+@app.route(
+    "/api/order/<int:order_id>/status"
+)
+def order_status_api(order_id):
+    if not login_required():
+        return jsonify({
+            "success": False,
+            "message": "Unauthorized"
+        }), 401
+
+    conn = get_db()
+
+    order = conn.execute(
+        """
+        SELECT *
+        FROM orders
+        WHERE id = ?
+        AND username = ?
+        """,
+        (
+            order_id,
+            session["username"]
+        )
+    ).fetchone()
+
+    conn.close()
+
+    if not order:
+        return jsonify({
+            "success": False,
+            "message": "Order မတွေ့ပါ။"
+        }), 404
+
+    result = update_single_order_status(order_id)
+
+    conn = get_db()
+
+    updated = conn.execute(
+        """
+        SELECT *
+        FROM orders
+        WHERE id = ?
+        """,
+        (
+            order_id,
+        )
+    ).fetchone()
+
+    conn.close()
+
+    return jsonify({
+        "success": result.get("success", False),
+        "order": {
+            "id": updated["id"],
+            "game": updated["game"],
+            "package": updated["package"],
+            "amount": float(updated["amount"]),
+            "status": updated["status"],
+            "provider_status": updated["provider_status"],
+            "provider_order_id": updated["provider_order_id"],
+            "created_at": updated["created_at"],
+            "updated_at": updated["updated_at"]
+        },
+        "message": result.get("message", "")
+    })
+
+
+# ============================================================
+# BACKGROUND STATUS CHECKER
+# ============================================================
+
+_status_checker_started = False
+
+
+def status_checker_loop():
+    while True:
+        try:
+            if flash_topup_configured():
+                check_processing_orders()
+        except Exception as e:
+            print(
+                "[STATUS CHECKER ERROR]",
+                str(e)
+            )
+
+        time.sleep(30)
+
+
+def start_status_checker():
+    pass
+
+
+# ============================================================
+# GET PROVIDER ORDER STATUS
+# ============================================================
+
 def get_provider_order_status(
     provider_order_id
 ):
@@ -4004,573 +4473,7 @@ def get_provider_order_status(
 
 
     response_data = data
-
-
-    if isinstance(
-        data.get("data"),
-        dict
-    ):
-
-        response_data = data["data"]
-
-
-    provider_status = (
-
-        response_data.get(
-            "status"
-        )
-
-        or response_data.get(
-            "order_status"
-        )
-
-        or response_data.get(
-            "orderStatus"
-        )
-
-        or data.get(
-            "status"
-        )
-
-        or data.get(
-            "order_status"
-        )
-
-        or "Unknown"
-    )
-
-
-    return {
-        "success": True,
-        "status":
-            str(provider_status),
-        "response": data
-    }
-
-
-# ============================================================
-# NORMALIZE ORDER STATUS
-# ============================================================
-
-def normalize_order_status(
-    status
-):
-
-    value = str(
-        status or ""
-    ).strip().lower()
-
-
-    if value in {
-        "completed",
-        "complete",
-        "success",
-        "successful",
-        "delivered",
-        "delivery_success",
-        "done"
-    }:
-
-        return "Completed"
-
-
-    if value in {
-        "failed",
-        "failure",
-        "cancelled",
-        "canceled",
-        "rejected",
-        "error",
-        "refunded"
-    }:
-
-        return "Failed"
-
-
-    if value in {
-        "processing",
-        "pending",
-        "in_progress",
-        "in-progress",
-        "queued",
-        "waiting"
-    }:
-
-        return "Processing"
-
-
-    return "Processing"
-
-
-# ============================================================
-# REFUND FAILED ORDER
-# ============================================================
-
-def refund_failed_order(
-    order_id
-):
-
-    conn = get_db()
-
-
-    order = conn.execute(
-        """
-        SELECT *
-        FROM orders
-        WHERE id = ?
-        """,
-        (
-            order_id,
-        )
-    ).fetchone()
-
-
-    conn.close()
-
-
-    if not order:
-
-        return {
-            "success": False,
-            "message": "Order မတွေ့ပါ။"
-        }
-
-
-    # --------------------------------------------------------
-    # WALLET WAS NEVER CHARGED
-    # --------------------------------------------------------
-
-    if int(
-        order["wallet_charged"] or 0
-    ) != 1:
-
-        return {
-            "success": True,
-            "refunded": False,
-            "message":
-                "Wallet မဖြတ်ထားပါ။ Refund မလိုပါ။"
-        }
-
-
-    # --------------------------------------------------------
-    # ALREADY REFUNDED
-    # --------------------------------------------------------
-
-    if int(
-        order["refunded"] or 0
-    ) == 1:
-
-        return {
-            "success": True,
-            "refunded": False,
-            "message":
-                "ဒီ Order ကို Refund လုပ်ပြီးပါပြီ။"
-        }
-
-
-    # --------------------------------------------------------
-    # REFUND
-    # --------------------------------------------------------
-
-    refund_result = refund_wallet(
-        order["username"],
-        float(order["amount"])
-    )
-
-
-    if not refund_result.get(
-        "success"
-    ):
-
-        return {
-            "success": False,
-            "refunded": False,
-            "message":
-                refund_result.get(
-                    "message",
-                    "Refund မလုပ်နိုင်ပါ။"
-                )
-        }
-
-
-    mark_order_refunded(
-        order_id
-    )
-
-
-    # --------------------------------------------------------
-    # UPDATE ORDER
-    # --------------------------------------------------------
-
-    conn = get_db()
-
-
-    conn.execute(
-        """
-        UPDATE orders
-        SET
-            status = 'Failed',
-            updated_at = ?
-        WHERE id = ?
-        """,
-        (
-            now(),
-            order_id
-        )
-    )
-
-
-    conn.commit()
-
-    conn.close()
-
-
-    # --------------------------------------------------------
-    # CUSTOMER NOTIFICATION
-    # --------------------------------------------------------
-
-    create_notification(
-
-        order["username"],
-
-        "💰 Order Refund",
-
-        (
-            f"သင်တင်ထားသော "
-            f"{order['package']} "
-            f"Order #{order_id} "
-            "မအောင်မြင်သဖြင့် "
-            f"{float(order['amount']):,.0f} Ks ကို "
-            "Wallet ထဲ ပြန်ထည့်ပေးပြီးပါပြီ။"
-        )
-    )
-
-
-    return {
-
-        "success": True,
-
-        "refunded": True,
-
-        "amount":
-            float(
-                order["amount"]
-            ),
-
-        "balance":
-            refund_result.get(
-                "balance"
-            )
-    }
-
-
-# ============================================================
-# UPDATE SINGLE ORDER STATUS
-# ============================================================
-
-def update_single_order_status(
-    order_id
-):
-
-    conn = get_db()
-
-
-    order = conn.execute(
-        """
-        SELECT *
-        FROM orders
-        WHERE id = ?
-        """,
-        (
-            order_id,
-        )
-    ).fetchone()
-
-
-    conn.close()
-
-
-    if not order:
-
-        return {
-            "success": False,
-            "message": "Order မတွေ့ပါ။"
-        }
-
-
-    # --------------------------------------------------------
-    # NO PROVIDER ORDER
-    # --------------------------------------------------------
-
-    if not order[
-        "provider_order_id"
-    ]:
-
-        return {
-            "success": False,
-            "message":
-                "Provider Order ID မရှိပါ။"
-        }
-
-
-    # --------------------------------------------------------
-    # ALREADY FINAL
-    # --------------------------------------------------------
-
-    if order["status"] in {
-        "Completed",
-        "Failed"
-    }:
-
-        return {
-            "success": True,
-            "status":
-                order["status"],
-            "message":
-                "Order already finalized."
-        }
-
-
-    # --------------------------------------------------------
-    # GET PROVIDER STATUS
-    # --------------------------------------------------------
-
-    result = get_provider_order_status(
-        order[
-            "provider_order_id"
-        ]
-    )
-
-
-    if not result.get(
-        "success"
-    ):
-
-        return result
-
-
-    provider_status = result.get(
-        "status",
-        "Unknown"
-    )
-
-
-    normalized = normalize_order_status(
-        provider_status
-    )
-
-
-    # --------------------------------------------------------
-    # PROCESSING
-    # --------------------------------------------------------
-
-    if normalized == "Processing":
-
-        conn = get_db()
-
-
-        conn.execute(
-            """
-            UPDATE orders
-            SET
-                status = 'Processing',
-                provider_status = ?,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                provider_status,
-                now(),
-                order_id
-            )
-        )
-
-
-        conn.commit()
-
-        conn.close()
-
-
-        return {
-
-            "success": True,
-
-            "status":
-                "Processing",
-
-            "provider_status":
-                provider_status
-        }
-
-
-    # --------------------------------------------------------
-    # COMPLETED
-    # --------------------------------------------------------
-
-    if normalized == "Completed":
-
-        conn = get_db()
-
-
-        conn.execute(
-            """
-            UPDATE orders
-            SET
-                status = 'Completed',
-                provider_status = ?,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                provider_status,
-                now(),
-                order_id
-            )
-        )
-
-
-        conn.commit()
-
-        conn.close()
-
-
-        create_notification(
-
-            order["username"],
-
-            "✅ Recharge Completed",
-
-            (
-                f"သင်တင်ထားသော "
-                f"{order['package']} "
-                f"Order #{order_id} ကို "
-                "In Game ထဲ ဖြည့်ပြီးပါပြီ။"
-            )
-        )
-
-
-        return {
-
-            "success": True,
-
-            "status":
-                "Completed",
-
-            "provider_status":
-                provider_status
-        }
-
-
-    # --------------------------------------------------------
-    # FAILED
-    # --------------------------------------------------------
-
-    if normalized == "Failed":
-
-        conn = get_db()
-
-
-        conn.execute(
-            """
-            UPDATE orders
-            SET
-                status = 'Failed',
-                provider_status = ?,
-                updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                provider_status,
-                now(),
-                order_id
-            )
-        )
-
-
-        conn.commit()
-
-        conn.close()
-
-
-        refund_result = refund_failed_order(
-            order_id
-        )
-
-
-        return {
-
-            "success":
-                refund_result.get(
-                    "success",
-                    True
-                ),
-
-            "status":
-                "Failed",
-
-            "provider_status":
-                provider_status,
-
-            "refunded":
-                refund_result.get(
-                    "refunded",
-                    False
-                )
-        }
-
-
-    return {
-
-        "success": True,
-
-        "status":
-            normalized,
-
-        "provider_status":
-            provider_status
-    }
-
-
-# ============================================================
-# CHECK ALL PROCESSING ORDERS
-# ============================================================
-
-def check_processing_orders():
-
-    conn = get_db()
-
-
-    orders = conn.execute(
-        """
-        SELECT id
-        FROM orders
-        WHERE status = 'Processing'
-        AND provider_order_id IS NOT NULL
-        AND provider_order_id != ''
-        ORDER BY id ASC
-        LIMIT 50
-        """
-    ).fetchall()
-
-
-    conn.close()
-
-
-    results = []
-
-
-    for row in orders:
-
-        try:
-
-            result = (
-                update_single_order_status(
-                    row["id"]
-                )
-            )
-
-
-            results.append({
+append({
                 "order_id":
                     row["id"],
 
