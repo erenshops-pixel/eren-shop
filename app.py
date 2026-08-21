@@ -6018,7 +6018,7 @@ def telegram_test():
 # ============================================================
 
 TELEGRAM_GROUP_ID = os.environ.get(
-    "",
+    "1003987776013",
     ""
 ).strip()
 
@@ -6473,4 +6473,3836 @@ def telegram_test_all():
 
 # ============================================================
 # PART 10 END
+# ============================================================
+
+
+# ============================================================
+# EREN'S SHOP - PART 11 / 16
+# ADMIN SYSTEM
+# ============================================================
+
+
+# ============================================================
+# ADMIN SETTINGS
+# ============================================================
+
+ADMIN_USERNAME = os.environ.get(
+    "Eren",
+    "admin"
+).strip()
+
+ADMIN_PASSWORD = os.environ.get(
+    "1852001",
+    ""
+).strip()
+
+
+# ============================================================
+# ADMIN LOGIN CHECK
+# ============================================================
+
+def admin_logged_in():
+
+    return (
+        session.get("is_admin")
+        is True
+    )
+
+
+# ============================================================
+# ADMIN REQUIRED
+# ============================================================
+
+def require_admin():
+
+    if not admin_logged_in():
+
+        return redirect(
+            url_for("admin_login")
+        )
+
+    return None
+
+
+# ============================================================
+# ADMIN LOGIN
+# ============================================================
+
+@app.route(
+    "/admin/login",
+    methods=["GET", "POST"]
+)
+def admin_login():
+
+    if admin_logged_in():
+
+        return redirect(
+            url_for("admin_dashboard")
+        )
+
+
+    if request.method == "POST":
+
+        username = (
+            request.form.get(
+                "username"
+            )
+            or ""
+        ).strip()
+
+
+        password = (
+            request.form.get(
+                "password"
+            )
+            or ""
+        )
+
+
+        if (
+            username == ADMIN_USERNAME
+            and ADMIN_PASSWORD
+            and password == ADMIN_PASSWORD
+        ):
+
+            session["is_admin"] = True
+
+            session["admin_username"] = (
+                username
+            )
+
+
+            return redirect(
+                url_for("admin_dashboard")
+            )
+
+
+        flash(
+            "Admin Username သို့မဟုတ် Password မှားနေပါတယ်။",
+            "error"
+        )
+
+
+    return render_template(
+        "admin_login.html"
+    )
+
+
+# ============================================================
+# ADMIN LOGOUT
+# ============================================================
+
+@app.route(
+    "/admin/logout"
+)
+def admin_logout():
+
+    session.pop(
+        "is_admin",
+        None
+    )
+
+    session.pop(
+        "admin_username",
+        None
+    )
+
+
+    return redirect(
+        url_for("admin_login")
+    )
+
+
+# ============================================================
+# ADMIN DASHBOARD
+# ============================================================
+
+@app.route(
+    "/admin"
+)
+def admin_dashboard():
+
+    check = require_admin()
+
+    if check:
+
+        return check
+
+
+    conn = get_db()
+
+
+    # --------------------------------------------------------
+    # USERS
+    # --------------------------------------------------------
+
+    total_users = conn.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM users
+        """
+    ).fetchone()["total"]
+
+
+    # --------------------------------------------------------
+    # ORDERS
+    # --------------------------------------------------------
+
+    total_orders = conn.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM orders
+        """
+    ).fetchone()["total"]
+
+
+    pending_orders = conn.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM orders
+        WHERE status IN (
+            'Pending',
+            'Processing'
+        )
+        """
+    ).fetchone()["total"]
+
+
+    completed_orders = conn.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM orders
+        WHERE status = 'Completed'
+        """
+    ).fetchone()["total"]
+
+
+    failed_orders = conn.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM orders
+        WHERE status = 'Failed'
+        """
+    ).fetchone()["total"]
+
+
+    # --------------------------------------------------------
+    # DEPOSITS
+    # --------------------------------------------------------
+
+    pending_deposits = conn.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM deposits
+        WHERE status = 'Pending'
+        """
+    ).fetchone()["total"]
+
+
+    total_deposits = conn.execute(
+        """
+        SELECT COALESCE(
+            SUM(amount), 0
+        ) AS total
+        FROM deposits
+        WHERE status = 'Approved'
+        """
+    ).fetchone()["total"]
+
+
+    # --------------------------------------------------------
+    # RECENT ORDERS
+    # --------------------------------------------------------
+
+    recent_orders = conn.execute(
+        """
+        SELECT *
+        FROM orders
+        ORDER BY id DESC
+        LIMIT 20
+        """
+    ).fetchall()
+
+
+    # --------------------------------------------------------
+    # RECENT DEPOSITS
+    # --------------------------------------------------------
+
+    recent_deposits = conn.execute(
+        """
+        SELECT *
+        FROM deposits
+        ORDER BY id DESC
+        LIMIT 20
+        """
+    ).fetchall()
+
+
+    conn.close()
+
+
+    return render_template(
+
+        "admin_dashboard.html",
+
+        total_users=
+            total_users,
+
+        total_orders=
+            total_orders,
+
+        pending_orders=
+            pending_orders,
+
+        completed_orders=
+            completed_orders,
+
+        failed_orders=
+            failed_orders,
+
+        pending_deposits=
+            pending_deposits,
+
+        total_deposits=
+            float(
+                total_deposits or 0
+            ),
+
+        recent_orders=
+            recent_orders,
+
+        recent_deposits=
+            recent_deposits
+    )
+
+
+# ============================================================
+# ADMIN DEPOSITS
+# ============================================================
+
+@app.route(
+    "/admin/deposits"
+)
+def admin_deposits():
+
+    check = require_admin()
+
+    if check:
+
+        return check
+
+
+    status = (
+        request.args.get(
+            "status"
+        )
+        or "all"
+    ).strip()
+
+
+    conn = get_db()
+
+
+    if status == "all":
+
+        deposits = conn.execute(
+            """
+            SELECT *
+            FROM deposits
+            ORDER BY id DESC
+            """
+        ).fetchall()
+
+    else:
+
+        deposits = conn.execute(
+            """
+            SELECT *
+            FROM deposits
+            WHERE status = ?
+            ORDER BY id DESC
+            """,
+            (
+                status,
+            )
+        ).fetchall()
+
+
+    conn.close()
+
+
+    return render_template(
+
+        "admin_deposits.html",
+
+        deposits=
+            deposits,
+
+        selected_status=
+            status
+    )
+
+
+# ============================================================
+# ADMIN APPROVE DEPOSIT
+# ============================================================
+
+@app.route(
+    "/admin/deposit/<int:deposit_id>/approve",
+    methods=["POST"]
+)
+def admin_approve_deposit(
+    deposit_id
+):
+
+    check = require_admin()
+
+    if check:
+
+        return check
+
+
+    result = approve_deposit(
+        deposit_id
+    )
+
+
+    if not result.get(
+        "success"
+    ):
+
+        flash(
+            result.get(
+                "message",
+                "Deposit approve မလုပ်နိုင်ပါ။"
+            ),
+            "error"
+        )
+
+        return redirect(
+            url_for(
+                "admin_deposits"
+            )
+        )
+
+
+    # --------------------------------------------------------
+    # TELEGRAM OWNER + GP
+    # --------------------------------------------------------
+
+    try:
+
+        notify_owner_deposit_approved(
+            deposit_id
+        )
+
+    except Exception as e:
+
+        print(
+            "[DEPOSIT TELEGRAM ERROR]",
+            str(e)
+        )
+
+
+    flash(
+        (
+            f"Deposit #{deposit_id} "
+            "Approve လုပ်ပြီးပါပြီ။"
+        ),
+        "success"
+    )
+
+
+    return redirect(
+        url_for(
+            "admin_deposits"
+        )
+    )
+
+
+# ============================================================
+# ADMIN REJECT DEPOSIT
+# ============================================================
+
+@app.route(
+    "/admin/deposit/<int:deposit_id>/reject",
+    methods=["POST"]
+)
+def admin_reject_deposit(
+    deposit_id
+):
+
+    check = require_admin()
+
+    if check:
+
+        return check
+
+
+    reason = (
+        request.form.get(
+            "reason"
+        )
+        or ""
+    ).strip()
+
+
+    result = reject_deposit(
+        deposit_id,
+        reason
+    )
+
+
+    if not result.get(
+        "success"
+    ):
+
+        flash(
+            result.get(
+                "message",
+                "Deposit reject မလုပ်နိုင်ပါ။"
+            ),
+            "error"
+        )
+
+        return redirect(
+            url_for(
+                "admin_deposits"
+            )
+        )
+
+
+    flash(
+        (
+            f"Deposit #{deposit_id} "
+            "Reject လုပ်ပြီးပါပြီ။"
+        ),
+        "success"
+    )
+
+
+    return redirect(
+        url_for(
+            "admin_deposits"
+        )
+    )
+
+
+# ============================================================
+# ADMIN ORDERS
+# ============================================================
+
+@app.route(
+    "/admin/orders"
+)
+def admin_orders():
+
+    check = require_admin()
+
+    if check:
+
+        return check
+
+
+    status = (
+        request.args.get(
+            "status"
+        )
+        or "all"
+    ).strip()
+
+
+    conn = get_db()
+
+
+    if status == "all":
+
+        orders = conn.execute(
+            """
+            SELECT *
+            FROM orders
+            ORDER BY id DESC
+            """
+        ).fetchall()
+
+    else:
+
+        orders = conn.execute(
+            """
+            SELECT *
+            FROM orders
+            WHERE status = ?
+            ORDER BY id DESC
+            """,
+            (
+                status,
+            )
+        ).fetchall()
+
+
+    conn.close()
+
+
+    return render_template(
+
+        "admin_orders.html",
+
+        orders=
+            orders,
+
+        selected_status=
+            status
+    )
+
+
+# ============================================================
+# ADMIN ORDER STATUS CHECK
+# ============================================================
+
+@app.route(
+    "/admin/order/<int:order_id>/check",
+    methods=["POST"]
+)
+def admin_check_order(
+    order_id
+):
+
+    check = require_admin()
+
+    if check:
+
+        return check
+
+
+    result = (
+        update_single_order_status(
+            order_id
+        )
+    )
+
+
+    if result.get(
+        "success"
+    ):
+
+        flash(
+            (
+                f"Order #{order_id} "
+                f"Status: "
+                f"{result.get('status', 'Unknown')}"
+            ),
+            "success"
+        )
+
+    else:
+
+        flash(
+            result.get(
+                "message",
+                "Status စစ်မရပါ။"
+            ),
+            "error"
+        )
+
+
+    return redirect(
+        url_for(
+            "admin_orders"
+        )
+    )
+
+
+# ============================================================
+# ADMIN USERS
+# ============================================================
+
+@app.route(
+    "/admin/users"
+)
+def admin_users():
+
+    check = require_admin()
+
+    if check:
+
+        return check
+
+
+    conn = get_db()
+
+
+    users = conn.execute(
+        """
+        SELECT
+            id,
+            username,
+            balance,
+            created_at
+        FROM users
+        ORDER BY id DESC
+        """
+    ).fetchall()
+
+
+    conn.close()
+
+
+    return render_template(
+
+        "admin_users.html",
+
+        users=
+            users
+    )
+
+
+# ============================================================
+# ADMIN USER BALANCE
+# ============================================================
+
+@app.route(
+    "/admin/user/<int:user_id>/balance",
+    methods=["POST"]
+)
+def admin_update_balance(
+    user_id
+):
+
+    check = require_admin()
+
+    if check:
+
+        return check
+
+
+    action = (
+        request.form.get(
+            "action"
+        )
+        or ""
+    ).strip().lower()
+
+
+    amount_raw = (
+        request.form.get(
+            "amount"
+        )
+        or ""
+    ).strip()
+
+
+    try:
+
+        amount = float(
+            amount_raw
+        )
+
+    except ValueError:
+
+        flash(
+            "Amount မမှန်ပါ။",
+            "error"
+        )
+
+        return redirect(
+            url_for(
+                "admin_users"
+            )
+        )
+
+
+    if amount <= 0:
+
+        flash(
+            "Amount 0 ထက်ကြီးရပါမယ်။",
+            "error"
+        )
+
+        return redirect(
+            url_for(
+                "admin_users"
+            )
+        )
+
+
+    conn = get_db()
+
+
+    user = conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE id = ?
+        """,
+        (
+            user_id,
+        )
+    ).fetchone()
+
+
+    if not user:
+
+        conn.close()
+
+        flash(
+            "User မတွေ့ပါ။",
+            "error"
+        )
+
+        return redirect(
+            url_for(
+                "admin_users"
+            )
+        )
+
+
+    old_balance = float(
+        user["balance"] or 0
+    )
+
+
+    if action == "add":
+
+        new_balance = (
+            old_balance
+            + amount
+        )
+
+
+    elif action == "remove":
+
+        new_balance = (
+            old_balance
+            - amount
+        )
+
+
+        if new_balance < 0:
+
+            new_balance = 0
+
+
+    else:
+
+        conn.close()
+
+        flash(
+            "Action မမှန်ပါ။",
+            "error"
+        )
+
+        return redirect(
+            url_for(
+                "admin_users"
+            )
+        )
+
+
+    conn.execute(
+        """
+        UPDATE users
+        SET balance = ?
+        WHERE id = ?
+        """,
+        (
+            new_balance,
+            user_id
+        )
+    )
+
+
+    conn.commit()
+
+    conn.close()
+
+
+    create_notification(
+
+        user["username"],
+
+        "💰 Wallet Updated",
+
+        (
+            f"Admin မှ Wallet Balance ကို "
+            f"{new_balance:,.0f} Ks သို့ "
+            "ပြောင်းလဲပေးထားပါတယ်။"
+        )
+    )
+
+
+    flash(
+        (
+            f"{user['username']} Wallet "
+            "ပြောင်းပြီးပါပြီ။"
+        ),
+        "success"
+    )
+
+
+    return redirect(
+        url_for(
+            "admin_users"
+        )
+    )
+
+
+# ============================================================
+# PART 11 END
+# ============================================================
+
+# ============================================================
+# EREN'S SHOP - PART 12 / 16
+# ML / PUBG AUTO RECHARGE API
+# FLASH TOPUP
+# ============================================================
+
+import os
+import json
+import time
+import uuid
+import hmac
+import hashlib
+import requests
+
+
+# ============================================================
+# FLASH TOPUP API CONFIG
+# ============================================================
+
+FT_API_ID = os.environ.get(
+    "RSL5YP4YFXLEGL8X",
+    ""
+).strip()
+
+FT_API_KEY = os.environ.get(
+    "4aadba4402eceffa0e6f777a8b09c7709c74c5c7556c9cc7e72e8740639e2f6e",
+    ""
+).strip()
+
+FT_BASE_URL = os.environ.get(
+    "FT_BASE_URL",
+    "https://api.flashtopup.com/api/reseller/v2"
+).rstrip("/")
+
+FT_TIMEOUT = int(
+    os.environ.get(
+        "FT_TIMEOUT",
+        "20"
+    )
+)
+
+FT_AUTO_RECHARGE = (
+    os.environ.get(
+        "FT_AUTO_RECHARGE",
+        "1"
+    )
+    .strip()
+    .lower()
+    in {
+        "1",
+        "true",
+        "yes",
+        "on"
+    }
+)
+
+
+# ============================================================
+# SIGNATURE SETTINGS
+# ============================================================
+
+FT_SIGN_TEMPLATE = os.environ.get(
+    "FT_SIGN_TEMPLATE",
+    "{path}{timestamp}{nonce}{body_hash}"
+)
+
+FT_ORDER_PATH = os.environ.get(
+    "FT_ORDER_PATH",
+    "/order"
+)
+
+FT_STATUS_PATH_TEMPLATE = os.environ.get(
+    "FT_STATUS_PATH_TEMPLATE",
+    "/order/{order_id}"
+)
+
+FT_WEBHOOK_SECRET = os.environ.get(
+    "FT_WEBHOOK_SECRET",
+    ""
+).strip()
+
+
+# ============================================================
+# ENABLE CHECK
+# ============================================================
+
+def flash_topup_enabled():
+
+    return bool(
+        FT_API_ID
+        and FT_API_KEY
+        and FT_BASE_URL
+        and FT_AUTO_RECHARGE
+    )
+
+
+# ============================================================
+# CREATE HMAC SIGNATURE
+# ============================================================
+
+def _flash_signature(
+    path,
+    timestamp,
+    nonce,
+    body_bytes
+):
+
+    body_hash = hashlib.sha256(
+        body_bytes
+    ).hexdigest()
+
+
+    signing_string = (
+        FT_SIGN_TEMPLATE.format(
+            path=path,
+            timestamp=timestamp,
+            nonce=nonce,
+            body_hash=body_hash
+        )
+    )
+
+
+    return hmac.new(
+        FT_API_KEY.encode(
+            "utf-8"
+        ),
+
+        signing_string.encode(
+            "utf-8"
+        ),
+
+        hashlib.sha256
+    ).hexdigest()
+
+
+# ============================================================
+# API HEADERS
+# ============================================================
+
+def _flash_headers(
+    path,
+    body_bytes
+):
+
+    timestamp = str(
+        int(time.time())
+    )
+
+    nonce = uuid.uuid4().hex
+
+
+    signature = _flash_signature(
+        path,
+        timestamp,
+        nonce,
+        body_bytes
+    )
+
+
+    return {
+
+        "Content-Type":
+            "application/json",
+
+        "Accept":
+            "application/json",
+
+        "X-FT-API-ID":
+            FT_API_ID,
+
+        "X-FT-TIMESTAMP":
+            timestamp,
+
+        "X-FT-NONCE":
+            nonce,
+
+        "X-FT-SIGNATURE":
+            signature
+    }
+
+
+# ============================================================
+# FLASH TOPUP REQUEST
+# ============================================================
+
+def _flash_json_request(
+    method,
+    path,
+    payload=None
+):
+
+    body = json.dumps(
+        payload or {},
+        separators=(
+            ",",
+            ":"
+        ),
+        ensure_ascii=False
+    ).encode("utf-8")
+
+
+    headers = _flash_headers(
+        path,
+        body
+    )
+
+
+    url = (
+        f"{FT_BASE_URL}"
+        f"{path}"
+    )
+
+
+    try:
+
+        response = requests.request(
+
+            method,
+
+            url,
+
+            data=body,
+
+            headers=headers,
+
+            timeout=FT_TIMEOUT
+        )
+
+
+        try:
+
+            data = response.json()
+
+        except Exception:
+
+            data = {
+                "raw":
+                    response.text[:2000]
+            }
+
+
+        print(
+            "[FlashTopup]",
+            method,
+            path,
+            "->",
+            response.status_code,
+            data
+        )
+
+
+        return {
+
+            "ok":
+                200
+                <= response.status_code
+                < 300,
+
+            "status_code":
+                response.status_code,
+
+            "data":
+                data
+        }
+
+
+    except requests.RequestException as e:
+
+        print(
+            "[FlashTopup ERROR]",
+            str(e)
+        )
+
+
+        return {
+
+            "ok":
+                False,
+
+            "status_code":
+                0,
+
+            "data": {
+
+                "error":
+                    str(e)
+            }
+        }
+
+
+# ============================================================
+# SERVICE CODE MAP
+# ============================================================
+
+def load_flash_service_map():
+
+    raw = os.environ.get(
+        "FT_SERVICE_MAP_JSON",
+        ""
+    ).strip()
+
+
+    if not raw:
+
+        return {}
+
+
+    try:
+
+        data = json.loads(
+            raw
+        )
+
+
+        if isinstance(
+            data,
+            dict
+        ):
+
+            return data
+
+
+    except Exception as e:
+
+        print(
+            "⚠️ FT_SERVICE_MAP_JSON Error:",
+            e
+        )
+
+
+    return {}
+
+
+FT_SERVICE_MAP = (
+    load_flash_service_map()
+)
+
+
+# ============================================================
+# GET SERVICE CODE
+# ============================================================
+
+def flash_service_code(
+    game,
+    package
+):
+
+    key = (
+        f"{game}|{package}"
+    )
+
+
+    # Exact service-code override
+    if key in FT_SERVICE_MAP:
+
+        return str(
+            FT_SERVICE_MAP[key]
+        )
+
+
+    # --------------------------------------------------------
+    # MOBILE LEGENDS
+    # --------------------------------------------------------
+
+    if game == "ML":
+
+        amount = (
+            package
+            .split(
+                " - ",
+                1
+            )[0]
+            .replace(
+                "💎",
+                ""
+            )
+            .strip()
+        )
+
+
+        if amount.isdigit():
+
+            return (
+                "TOPUP_MOBILE_LEGENDS_"
+                f"{amount}_DIAMONDS"
+            )
+
+
+        if "Weekly" in package:
+
+            return (
+                "TOPUP_MOBILE_LEGENDS_"
+                "WEEKLY_PASS"
+            )
+
+
+    # --------------------------------------------------------
+    # PUBG MOBILE
+    # --------------------------------------------------------
+
+    if game == "PUBG":
+
+        amount = (
+            package
+            .split(
+                " - ",
+                1
+            )[0]
+            .replace(
+                "UC",
+                ""
+            )
+            .strip()
+        )
+
+
+        if amount.isdigit():
+
+            return (
+                "TOPUP_PUBG_MOBILE_"
+                f"{amount}_UC"
+            )
+
+
+    return ""
+
+
+# ============================================================
+# PLACE FLASH TOPUP ORDER
+# ============================================================
+
+def flash_place_order(
+    game,
+    package,
+    game_id,
+    server_id,
+    local_order_id
+):
+
+    if not flash_topup_enabled():
+
+        return {
+
+            "success":
+                False,
+
+            "enabled":
+                False,
+
+            "error":
+                "FlashTopup API မသတ်မှတ်ရသေးပါ။"
+        }
+
+
+    service_code = (
+        flash_service_code(
+            game,
+            package
+        )
+    )
+
+
+    if not service_code:
+
+        return {
+
+            "success":
+                False,
+
+            "enabled":
+                True,
+
+            "error":
+                (
+                    f"{game} / {package} "
+                    "အတွက် Service Code မရှိပါ။ "
+                    "FT_SERVICE_MAP_JSON ထည့်ပါ။"
+                )
+        }
+
+
+    # --------------------------------------------------------
+    # CREATE UNIQUE REFERENCE
+    # --------------------------------------------------------
+
+    reference_id = (
+        f"EREN-"
+        f"{local_order_id}-"
+        f"{uuid.uuid4().hex[:8]}"
+    )
+
+
+    # --------------------------------------------------------
+    # API PAYLOAD
+    # --------------------------------------------------------
+
+    payload = {
+
+        "service_code":
+            service_code,
+
+        "reference_id":
+            reference_id,
+
+        "quantity":
+            1,
+
+        "user_id":
+            str(game_id)
+    }
+
+
+    # ML Server ID
+    if (
+        game == "ML"
+        and server_id
+    ):
+
+        payload[
+            "server_id"
+        ] = str(
+            server_id
+        )
+
+
+    # --------------------------------------------------------
+    # SEND API ORDER
+    # --------------------------------------------------------
+
+    result = _flash_json_request(
+
+        "POST",
+
+        FT_ORDER_PATH,
+
+        payload
+    )
+
+
+    data = (
+        result.get(
+            "data"
+        )
+        or {}
+    )
+
+
+    if (
+        not result.get("ok")
+        or data.get("success")
+        is False
+    ):
+
+        error = (
+
+            data.get(
+                "message"
+            )
+
+            or data.get(
+                "error"
+            )
+
+            or data.get(
+                "raw"
+            )
+
+            or (
+                f"HTTP "
+                f"{result.get('status_code')}"
+            )
+        )
+
+
+        return {
+
+            "success":
+                False,
+
+            "enabled":
+                True,
+
+            "error":
+                str(error),
+
+            "raw":
+                data
+        }
+
+
+    # --------------------------------------------------------
+    # RESPONSE DATA
+    # --------------------------------------------------------
+
+    inner = (
+
+        data.get("data")
+
+        if isinstance(
+            data.get("data"),
+            dict
+        )
+
+        else data
+    )
+
+
+    provider_order_id = (
+
+        inner.get(
+            "order_id"
+        )
+
+        or inner.get(
+            "id"
+        )
+
+        or inner.get(
+            "orderId"
+        )
+    )
+
+
+    provider_status = (
+
+        inner.get(
+            "order_status"
+        )
+
+        or inner.get(
+            "status"
+        )
+
+        or "Processing"
+    )
+
+
+    if not provider_order_id:
+
+        return {
+
+            "success":
+                False,
+
+            "enabled":
+                True,
+
+            "error":
+                (
+                    "API Response ထဲမှာ "
+                    "Provider Order ID မပါပါ။"
+                ),
+
+            "raw":
+                data
+        }
+
+
+    return {
+
+        "success":
+            True,
+
+        "enabled":
+            True,
+
+        "provider_order_id":
+            str(
+                provider_order_id
+            ),
+
+        "provider_status":
+            str(
+                provider_status
+            ),
+
+        "service_code":
+            service_code,
+
+        "raw":
+            data
+    }
+
+
+# ============================================================
+# GET FLASH TOPUP ORDER STATUS
+# ============================================================
+
+def flash_get_order_status(
+    provider_order_id
+):
+
+    if (
+        not flash_topup_enabled()
+        or not provider_order_id
+    ):
+
+        return {
+
+            "success":
+                False,
+
+            "error":
+                "FlashTopup API မသတ်မှတ်ရသေးပါ။"
+        }
+
+
+    path = (
+        FT_STATUS_PATH_TEMPLATE.format(
+            order_id=
+                provider_order_id
+        )
+    )
+
+
+    result = _flash_json_request(
+
+        "GET",
+
+        path,
+
+        {}
+    )
+
+
+    data = (
+        result.get(
+            "data"
+        )
+        or {}
+    )
+
+
+    inner = (
+
+        data.get("data")
+
+        if isinstance(
+            data.get("data"),
+            dict
+        )
+
+        else data
+    )
+
+
+    status = (
+
+        inner.get(
+            "order_status"
+        )
+
+        or inner.get(
+            "status"
+        )
+    )
+
+
+    return {
+
+        "success":
+            bool(
+                result.get("ok")
+            )
+            and bool(status),
+
+        "status":
+            str(status)
+            if status
+            else "Unknown",
+
+        "raw":
+            data,
+
+        "error":
+            (
+                data.get(
+                    "message"
+                )
+                or data.get(
+                    "error"
+                )
+                if isinstance(
+                    data,
+                    dict
+                )
+                else ""
+            )
+    }
+
+
+# ============================================================
+# NORMALIZE PROVIDER STATUS
+# ============================================================
+
+def normalize_provider_status(
+    status
+):
+
+    value = str(
+        status or ""
+    ).strip().lower()
+
+
+    if value in {
+
+        "completed",
+        "complete",
+        "success",
+        "successful",
+        "delivered",
+        "done"
+
+    }:
+
+        return "Completed"
+
+
+    if value in {
+
+        "failed",
+        "failure",
+        "cancelled",
+        "canceled",
+        "rejected",
+        "error"
+
+    }:
+
+        return "Failed"
+
+
+    return "Processing"
+
+
+# ============================================================
+# CHECK API CONFIG
+# ============================================================
+
+@app.route(
+    "/api/auto-recharge/config",
+    methods=["GET"]
+)
+def auto_recharge_config():
+
+    if not login_required():
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Unauthorized"
+
+        }), 401
+
+
+    return jsonify({
+
+        "success":
+            True,
+
+        "enabled":
+            flash_topup_enabled(),
+
+        "ml":
+            bool(
+                flash_service_code(
+                    "ML",
+                    "86 💎 - 5,600 Ks"
+                )
+            ),
+
+        "pubg":
+            bool(
+                flash_service_code(
+                    "PUBG",
+                    "60 UC - 600 Ks"
+                )
+            )
+    })
+
+
+# ============================================================
+# TEST FLASH TOPUP CONNECTION
+# ============================================================
+
+@app.route(
+    "/api/auto-recharge/test",
+    methods=["POST"]
+)
+def test_auto_recharge():
+
+    if not admin_logged_in():
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Admin Only"
+
+        }), 403
+
+
+    if not flash_topup_enabled():
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                (
+                    "FlashTopup API Variables "
+                    "မပြည့်စုံသေးပါ။"
+                )
+        })
+
+
+    return jsonify({
+
+        "success":
+            True,
+
+        "message":
+            "FlashTopup API configuration OK.",
+
+        "base_url":
+            FT_BASE_URL,
+
+        "auto_recharge":
+            FT_AUTO_RECHARGE
+    })
+
+
+# ============================================================
+# PART 12 END
+# ============================================================
+
+# ============================================================
+# EREN'S SHOP - PART 13 / 16
+# ML / PUBG ORDER -> AUTO RECHARGE API
+# ============================================================
+
+
+# ============================================================
+# PACKAGE PRICE MAP
+# ============================================================
+
+PACKAGE_PRICE_MAP = {
+
+    # ---------------- ML ----------------
+
+    "10 💎 - 1,000 Ks": 1000,
+    "12 💎 - 1,200 Ks": 1200,
+    "20 💎 - 1,900 Ks": 1900,
+    "22 💎 - 2,100 Ks": 2100,
+    "33 💎 - 3,000 Ks": 3000,
+    "44 💎 - 3,600 Ks": 3600,
+    "55 💎 - 4,000 Ks": 4000,
+    "56 💎 - 4,400 Ks": 4400,
+    "86 💎 - 5,600 Ks": 5600,
+    "172 💎 - 10,800 Ks": 10800,
+    "257 💎 - 15,800 Ks": 15800,
+    "279 💎 - 17,100 Ks": 17100,
+    "343 💎 - 20,600 Ks": 20600,
+    "429 💎 - 25,900 Ks": 25900,
+    "Weekly Pass - 6,400 Ks": 6400,
+
+
+    # ---------------- PUBG ----------------
+
+    "60 UC - 600 Ks": 600,
+    "325 UC - 3,250 Ks": 3250,
+    "660 UC - 6,600 Ks": 6600,
+    "1800 UC - 18,000 Ks": 18000,
+    "3850 UC - 38,500 Ks": 38500,
+}
+
+
+# ============================================================
+# CREATE AUTO ORDER
+# ============================================================
+
+def create_auto_order(
+    username,
+    game,
+    package,
+    game_id,
+    server_id,
+    telegram_username,
+    payment
+):
+
+    if game not in {
+        "ML",
+        "PUBG"
+    }:
+
+        return {
+            "success": False,
+            "message":
+                "Auto Recharge က ML/PUBG အတွက်ပဲ ဖြစ်ပါတယ်။"
+        }
+
+
+    if not flash_topup_enabled():
+
+        return {
+            "success": False,
+            "message":
+                "Auto Recharge API မချိတ်ထားသေးပါ။"
+        }
+
+
+    if package not in PACKAGE_PRICE_MAP:
+
+        return {
+            "success": False,
+            "message":
+                "Package မမှန်ပါ။"
+        }
+
+
+    price = float(
+        PACKAGE_PRICE_MAP[
+            package
+        ]
+    )
+
+
+    # --------------------------------------------------------
+    # CHECK USER
+    # --------------------------------------------------------
+
+    conn = get_db()
+
+
+    user = conn.execute(
+        """
+        SELECT *
+        FROM users
+        WHERE username = ?
+        """,
+        (
+            username,
+        )
+    ).fetchone()
+
+
+    if not user:
+
+        conn.close()
+
+        return {
+            "success": False,
+            "message":
+                "User account မတွေ့ပါ။"
+        }
+
+
+    balance = float(
+        user["balance"] or 0
+    )
+
+
+    if balance < price:
+
+        conn.close()
+
+        return {
+            "success": False,
+            "message":
+                (
+                    "Wallet Balance မလုံလောက်ပါ။ "
+                    f"လိုအပ်ငွေ - "
+                    f"{price - balance:,.0f} Ks"
+                )
+        }
+
+
+    # --------------------------------------------------------
+    # CREATE LOCAL ORDER FIRST
+    # --------------------------------------------------------
+
+    cursor = conn.cursor()
+
+
+    cursor.execute(
+        """
+        INSERT INTO orders (
+            username,
+            game,
+            package,
+            game_id,
+            server_id,
+            telegram_username,
+            payment,
+            status,
+            created_at,
+            wallet_charged
+        )
+        VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, 0
+        )
+        """,
+        (
+            username,
+            game,
+            package,
+            game_id,
+            server_id,
+            telegram_username,
+            payment,
+            "Pending",
+            now()
+        )
+    )
+
+
+    order_id = cursor.lastrowid
+
+
+    conn.commit()
+
+    conn.close()
+
+
+    # --------------------------------------------------------
+    # CUSTOMER NOTIFICATION
+    # --------------------------------------------------------
+
+    create_notification(
+
+        username,
+
+        "🟡 Order တင်ပြီးပါပြီ",
+
+        (
+            f"သင်ရွေးထားသော "
+            f"{package} ကို "
+            f"Order #{order_id} အဖြစ် "
+            "Auto Recharge စတင်လုပ်နေပါပြီ။"
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # SEND TO FLASH TOPUP API
+    # --------------------------------------------------------
+
+    result = process_auto_recharge(
+        order_id,
+        notify=True
+    )
+
+
+    # --------------------------------------------------------
+    # API FAILED
+    # --------------------------------------------------------
+
+    if not result.get(
+        "success"
+    ):
+
+        error = result.get(
+            "error",
+            "Unknown API error"
+        )
+
+
+        create_notification(
+
+            username,
+
+            "❌ Auto Recharge Failed",
+
+            (
+                f"Order #{order_id} "
+                "Auto Recharge မအောင်မြင်ပါ။\n\n"
+                f"အကြောင်းရင်း - {error}"
+            )
+        )
+
+
+        # ----------------------------------------------------
+        # OWNER + GP
+        # ----------------------------------------------------
+
+        try:
+
+            send_telegram_all(
+
+                (
+                    "❌ <b>AUTO RECHARGE FAILED</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    f"🆔 Order: <code>#{order_id}</code>\n"
+                    f"👤 User: <code>{username}</code>\n"
+                    f"🎮 Game: <b>{game}</b>\n"
+                    f"📦 Package: <b>{package}</b>\n"
+                    f"💰 Price: <b>{price:,.0f} Ks</b>\n"
+                    f"🎯 ID: <code>{game_id}</code>\n"
+                    f"🌐 Server: <code>{server_id or '-'}</code>\n"
+                    f"⚠️ Error: <code>{str(error)[:500]}</code>\n"
+                    "━━━━━━━━━━━━━━━━━━"
+                )
+            )
+
+        except Exception as e:
+
+            print(
+                "[TELEGRAM FAILED ORDER ERROR]",
+                e
+            )
+
+
+        return {
+
+            "success":
+                False,
+
+            "order_id":
+                order_id,
+
+            "status":
+                "Failed",
+
+            "message":
+                (
+                    f"Order #{order_id} "
+                    "Auto Recharge မအောင်မြင်ပါ။"
+                ),
+
+            "error":
+                str(error)
+        }
+
+
+    # --------------------------------------------------------
+    # API ACCEPTED
+    # --------------------------------------------------------
+
+    provider_order_id = (
+        result.get(
+            "provider_order_id"
+        )
+    )
+
+
+    provider_status = (
+        result.get(
+            "status",
+            "Processing"
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # CUSTOMER MESSAGE
+    # --------------------------------------------------------
+
+    if provider_status == "Completed":
+
+        customer_message = (
+
+            f"✅ Order #{order_id} "
+            "အောင်မြင်ပြီးပါပြီ။\n\n"
+
+            f"💎 {package}\n"
+
+            "🎮 In Game ထဲသို့ "
+            "ဖြည့်ပြီးပါပြီ။"
+        )
+
+
+    else:
+
+        customer_message = (
+
+            f"🟢 Order #{order_id} "
+            "တင်ပြီးပါပြီ။\n\n"
+
+            f"💎 {package}\n"
+
+            "🔄 Auto Recharge "
+            "လုပ်နေပါပြီ။"
+        )
+
+
+    create_notification(
+
+        username,
+
+        (
+            "🎮 Order အောင်မြင်ပါပြီ"
+            if provider_status == "Completed"
+            else
+            "🟢 Auto Recharge လုပ်နေပါပြီ"
+        ),
+
+        customer_message
+    )
+
+
+    # --------------------------------------------------------
+    # OWNER + GP NOTIFICATION
+    # --------------------------------------------------------
+
+    try:
+
+        send_telegram_all(
+
+            (
+                "🤖 <b>AUTO ORDER</b>\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                f"🆔 Order: <code>#{order_id}</code>\n"
+                f"👤 User: <code>{username}</code>\n"
+                f"🎮 Game: <b>{game}</b>\n"
+                f"📦 Package: <b>{package}</b>\n"
+                f"💰 Price: <b>{price:,.0f} Ks</b>\n"
+                f"🎯 Game ID: <code>{game_id}</code>\n"
+                f"🌐 Server ID: <code>{server_id or '-'}</code>\n"
+                f"🔗 Provider ID: <code>{provider_order_id}</code>\n"
+                f"📌 Status: <b>{provider_status}</b>\n"
+                "━━━━━━━━━━━━━━━━━━"
+            )
+        )
+
+    except Exception as e:
+
+        print(
+            "[TELEGRAM AUTO ORDER ERROR]",
+            e
+        )
+
+
+    return {
+
+        "success":
+            True,
+
+        "order_id":
+            order_id,
+
+        "provider_order_id":
+            provider_order_id,
+
+        "status":
+            provider_status,
+
+        "message":
+            customer_message
+    }
+
+
+# ============================================================
+# PLACE AUTO ORDER API
+# ============================================================
+
+@app.route(
+    "/api/place-order",
+    methods=["POST"]
+)
+def api_place_auto_order():
+
+    if "username" not in session:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Login လုပ်ပါ။"
+
+        }), 401
+
+
+    data = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+
+    game = str(
+        data.get(
+            "game",
+            ""
+        )
+    ).strip()
+
+
+    package = str(
+        data.get(
+            "package",
+            ""
+        )
+    ).strip()
+
+
+    game_id = str(
+        data.get(
+            "game_id",
+            ""
+        )
+    ).strip()
+
+
+    server_id = str(
+        data.get(
+            "server_id",
+            ""
+        )
+    ).strip()
+
+
+    telegram_username = str(
+        data.get(
+            "telegram_username",
+            ""
+        )
+    ).strip().lstrip("@")
+
+
+    payment = str(
+        data.get(
+            "payment",
+            "Wallet"
+        )
+    ).strip()
+
+
+    # --------------------------------------------------------
+    # VALIDATION
+    # --------------------------------------------------------
+
+    if game not in {
+        "ML",
+        "PUBG"
+    }:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "ML သို့မဟုတ် PUBG ရွေးပါ။"
+
+        }), 400
+
+
+    if not package:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Package ရွေးပါ။"
+
+        }), 400
+
+
+    if not game_id:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Game ID ထည့်ပါ။"
+
+        }), 400
+
+
+    if (
+        game == "ML"
+        and not server_id
+    ):
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "ML အတွက် Server ID ထည့်ပါ။"
+
+        }), 400
+
+
+    # --------------------------------------------------------
+    # CREATE ORDER
+    # --------------------------------------------------------
+
+    result = create_auto_order(
+
+        session["username"],
+
+        game,
+
+        package,
+
+        game_id,
+
+        server_id,
+
+        telegram_username,
+
+        payment
+    )
+
+
+    if not result.get(
+        "success"
+    ):
+
+        return jsonify(
+            result
+        ), 400
+
+
+    return jsonify(
+        result
+    )
+
+
+# ============================================================
+# GET ORDER STATUS
+# ============================================================
+
+@app.route(
+    "/api/my-order/<int:order_id>"
+)
+def api_my_order(
+    order_id
+):
+
+    if "username" not in session:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Login လုပ်ပါ။"
+
+        }), 401
+
+
+    conn = get_db()
+
+
+    order = conn.execute(
+        """
+        SELECT *
+        FROM orders
+        WHERE id = ?
+        AND username = ?
+        """,
+        (
+            order_id,
+            session["username"]
+        )
+    ).fetchone()
+
+
+    conn.close()
+
+
+    if not order:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Order မတွေ့ပါ။"
+
+        }), 404
+
+
+    return jsonify({
+
+        "success":
+            True,
+
+        "order": {
+
+            "id":
+                order["id"],
+
+            "game":
+                order["game"],
+
+            "package":
+                order["package"],
+
+            "game_id":
+                order["game_id"],
+
+            "server_id":
+                order["server_id"],
+
+            "status":
+                order["status"],
+
+            "provider_order_id":
+                order["provider_order_id"],
+
+            "provider_status":
+                order["provider_status"],
+
+            "created_at":
+                order["created_at"]
+        }
+    })
+
+
+# ============================================================
+# PART 13 END
+# ============================================================
+
+# ============================================================
+# EREN'S SHOP - PART 14 / 16
+# AUTO API STATUS CHECKER
+# COMPLETED / FAILED / REFUND
+# ============================================================
+
+
+# ============================================================
+# STATUS CHECK ONE ORDER
+# ============================================================
+
+def check_auto_order_status(order_id):
+
+    conn = get_db()
+
+    order = conn.execute(
+        """
+        SELECT *
+        FROM orders
+        WHERE id = ?
+        """,
+        (order_id,)
+    ).fetchone()
+
+    if not order:
+        conn.close()
+
+        return {
+            "success": False,
+            "message": "Order မတွေ့ပါ။"
+        }
+
+    provider_order_id = (
+        order["provider_order_id"]
+    )
+
+    if not provider_order_id:
+        conn.close()
+
+        return {
+            "success": False,
+            "message":
+                "Provider Order ID မရှိသေးပါ။"
+        }
+
+    result = flash_get_order_status(
+        provider_order_id
+    )
+
+    if not result.get("success"):
+
+        conn.close()
+
+        return {
+            "success": False,
+            "status":
+                order["status"],
+            "message":
+                result.get(
+                    "error",
+                    "API Status စစ်မရပါ။"
+                )
+        }
+
+    provider_status = result.get(
+        "status",
+        "Processing"
+    )
+
+    normalized = normalize_provider_status(
+        provider_status
+    )
+
+
+    # --------------------------------------------------------
+    # CURRENT STATUS
+    # --------------------------------------------------------
+
+    old_status = (
+        order["status"]
+        or "Pending"
+    )
+
+
+    # --------------------------------------------------------
+    # COMPLETED
+    # --------------------------------------------------------
+
+    if normalized == "Completed":
+
+        conn.execute(
+            """
+            UPDATE orders
+            SET
+                provider_status = ?,
+                status = 'Completed'
+            WHERE id = ?
+            """,
+            (
+                str(provider_status),
+                order_id
+            )
+        )
+
+        conn.commit()
+
+        conn.close()
+
+
+        # Customer notification
+        create_notification(
+
+            order["username"],
+
+            "🎮 Order အောင်မြင်ပါပြီ",
+
+            (
+                f"သင်ဖြည့်ထားသော "
+                f"{order['package']} ကို "
+                "In Game ထဲသို့ "
+                "ဖြည့်ပြီးပါပြီ။"
+            )
+        )
+
+
+        # Owner + GP
+        try:
+
+            send_telegram_all(
+
+                (
+                    "✅ <b>AUTO RECHARGE COMPLETED</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    f"🆔 Order: "
+                    f"<code>#{order_id}</code>\n"
+                    f"👤 User: "
+                    f"<code>{order['username']}</code>\n"
+                    f"🎮 Game: "
+                    f"<b>{order['game']}</b>\n"
+                    f"📦 Package: "
+                    f"<b>{order['package']}</b>\n"
+                    f"🎯 ID: "
+                    f"<code>{order['game_id']}</code>\n"
+                    f"🌐 Server: "
+                    f"<code>{order['server_id'] or '-'}</code>\n"
+                    f"🔗 Provider: "
+                    f"<code>{provider_order_id}</code>\n"
+                    f"📌 Status: "
+                    f"<b>{provider_status}</b>\n"
+                    "━━━━━━━━━━━━━━━━━━"
+                )
+            )
+
+        except Exception as e:
+
+            print(
+                "[COMPLETED TELEGRAM ERROR]",
+                e
+            )
+
+
+        return {
+
+            "success": True,
+
+            "status":
+                "Completed",
+
+            "provider_status":
+                provider_status,
+
+            "changed":
+                old_status != "Completed"
+        }
+
+
+    # --------------------------------------------------------
+    # FAILED
+    # --------------------------------------------------------
+
+    if normalized == "Failed":
+
+        # Re-open connection because
+        # refund helper needs a live connection.
+        conn = get_db()
+
+        order = conn.execute(
+            """
+            SELECT *
+            FROM orders
+            WHERE id = ?
+            """,
+            (order_id,)
+        ).fetchone()
+
+
+        if not order:
+
+            conn.close()
+
+            return {
+                "success": False,
+                "message":
+                    "Order မတွေ့ပါ။"
+            }
+
+
+        # Update provider status first
+        conn.execute(
+            """
+            UPDATE orders
+            SET
+                provider_status = ?,
+                status = 'Failed'
+            WHERE id = ?
+            """,
+            (
+                str(provider_status),
+                order_id
+            )
+        )
+
+
+        # ----------------------------------------------------
+        # REFUND ONLY IF WALLET WAS CHARGED
+        # ----------------------------------------------------
+
+        refunded = (
+            _refund_wallet_for_order(
+                conn,
+                order
+            )
+        )
+
+
+        conn.commit()
+
+        conn.close()
+
+
+        # Customer notification
+        refund_amount = (
+            PACKAGE_PRICE_MAP.get(
+                order["package"],
+                0
+            )
+        )
+
+
+        create_notification(
+
+            order["username"],
+
+            "❌ Auto Recharge Failed",
+
+            (
+                f"Order #{order_id} "
+                "မအောင်မြင်ပါ။\n\n"
+                f"💰 {refund_amount:,.0f} Ks "
+                "ကို Wallet ထဲ "
+                "ပြန်ထည့်ပေးထားပါတယ်။"
+                if refunded
+                else
+                (
+                    f"Order #{order_id} "
+                    "မအောင်မြင်ပါ။"
+                )
+            )
+        )
+
+
+        # Owner + GP
+        try:
+
+            refund_text = (
+                f"💰 Refund: "
+                f"{refund_amount:,.0f} Ks"
+                if refunded
+                else
+                "💰 Refund: မဖြတ်ထားပါ"
+            )
+
+
+            send_telegram_all(
+
+                (
+                    "❌ <b>AUTO RECHARGE FAILED</b>\n"
+                    "━━━━━━━━━━━━━━━━━━\n"
+                    f"🆔 Order: "
+                    f"<code>#{order_id}</code>\n"
+                    f"👤 User: "
+                    f"<code>{order['username']}</code>\n"
+                    f"🎮 Game: "
+                    f"<b>{order['game']}</b>\n"
+                    f"📦 Package: "
+                    f"<b>{order['package']}</b>\n"
+                    f"🎯 ID: "
+                    f"<code>{order['game_id']}</code>\n"
+                    f"🔗 Provider: "
+                    f"<code>{provider_order_id}</code>\n"
+                    f"📌 Status: "
+                    f"<b>{provider_status}</b>\n"
+                    f"{refund_text}\n"
+                    "━━━━━━━━━━━━━━━━━━"
+                )
+            )
+
+        except Exception as e:
+
+            print(
+                "[FAILED TELEGRAM ERROR]",
+                e
+            )
+
+
+        return {
+
+            "success": True,
+
+            "status":
+                "Failed",
+
+            "provider_status":
+                provider_status,
+
+            "refunded":
+                refunded,
+
+            "changed":
+                old_status != "Failed"
+        }
+
+
+    # --------------------------------------------------------
+    # PROCESSING / PENDING
+    # --------------------------------------------------------
+
+    conn = get_db()
+
+    conn.execute(
+        """
+        UPDATE orders
+        SET
+            provider_status = ?,
+            status = 'Processing'
+        WHERE id = ?
+        """,
+        (
+            str(provider_status),
+            order_id
+        )
+    )
+
+    conn.commit()
+
+    conn.close()
+
+
+    return {
+
+        "success":
+            True,
+
+        "status":
+            "Processing",
+
+        "provider_status":
+            provider_status,
+
+        "changed":
+            old_status != "Processing"
+    }
+
+
+# ============================================================
+# CHECK ALL PROCESSING ORDERS
+# ============================================================
+
+def check_all_auto_orders():
+
+    if not flash_topup_enabled():
+
+        return {
+
+            "success":
+                False,
+
+            "message":
+                "Auto Recharge API disabled.",
+
+            "checked":
+                0
+        }
+
+
+    conn = get_db()
+
+
+    orders = conn.execute(
+        """
+        SELECT id
+        FROM orders
+        WHERE game IN ('ML', 'PUBG')
+        AND provider_order_id IS NOT NULL
+        AND provider_order_id != ''
+        AND status IN (
+            'Pending',
+            'Processing'
+        )
+        ORDER BY id ASC
+        LIMIT 50
+        """
+    ).fetchall()
+
+
+    conn.close()
+
+
+    checked = 0
+    completed = 0
+    failed = 0
+
+
+    for row in orders:
+
+        order_id = row["id"]
+
+
+        try:
+
+            result = (
+                check_auto_order_status(
+                    order_id
+                )
+            )
+
+
+            if result.get(
+                "success"
+            ):
+
+                checked += 1
+
+
+                if (
+                    result.get(
+                        "status"
+                    )
+                    == "Completed"
+                ):
+
+                    completed += 1
+
+
+                elif (
+                    result.get(
+                        "status"
+                    )
+                    == "Failed"
+                ):
+
+                    failed += 1
+
+
+        except Exception as e:
+
+            print(
+                f"[STATUS CHECK ERROR] "
+                f"Order #{order_id}:",
+                e
+            )
+
+
+    return {
+
+        "success":
+            True,
+
+        "checked":
+            checked,
+
+        "completed":
+            completed,
+
+        "failed":
+            failed
+    }
+
+
+# ============================================================
+# MANUAL ADMIN STATUS CHECK
+# ============================================================
+
+@app.route(
+    "/admin/order/<int:order_id>/api-status",
+    methods=["POST"]
+)
+def admin_api_status(
+    order_id
+):
+
+    if not admin_logged_in():
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Admin Only"
+
+        }), 403
+
+
+    result = check_auto_order_status(
+        order_id
+    )
+
+
+    return jsonify(
+        result
+    )
+
+
+# ============================================================
+# CHECK ALL API ORDERS
+# ============================================================
+
+@app.route(
+    "/admin/api/check-orders",
+    methods=["POST"]
+)
+def admin_check_all_api_orders():
+
+    if not admin_logged_in():
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Admin Only"
+
+        }), 403
+
+
+    result = check_all_auto_orders()
+
+
+    return jsonify(
+        result
+    )
+
+
+# ============================================================
+# API STATUS FOR CUSTOMER
+# ============================================================
+
+@app.route(
+    "/api/order/<int:order_id>/status"
+)
+def customer_order_status(
+    order_id
+):
+
+    if "username" not in session:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Login လုပ်ပါ။"
+
+        }), 401
+
+
+    conn = get_db()
+
+
+    order = conn.execute(
+        """
+        SELECT *
+        FROM orders
+        WHERE id = ?
+        AND username = ?
+        """,
+        (
+            order_id,
+            session["username"]
+        )
+    ).fetchone()
+
+
+    conn.close()
+
+
+    if not order:
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Order မတွေ့ပါ။"
+
+        }), 404
+
+
+    return jsonify({
+
+        "success":
+            True,
+
+        "order_id":
+            order["id"],
+
+        "game":
+            order["game"],
+
+        "package":
+            order["package"],
+
+        "status":
+            order["status"],
+
+        "provider_status":
+            order["provider_status"],
+
+        "provider_order_id":
+            order["provider_order_id"]
+    })
+
+
+# ============================================================
+# PART 14 END
+# ============================================================
+
+# ============================================================
+# EREN'S SHOP - PART 15 / 16
+# AUTO STATUS BACKGROUND WORKER
+# ============================================================
+
+
+# ============================================================
+# AUTO STATUS CHECK SETTINGS
+# ============================================================
+
+AUTO_STATUS_CHECK_INTERVAL = 30
+
+_auto_status_worker_started = False
+
+_auto_status_worker_lock = threading.Lock()
+
+
+# ============================================================
+# AUTO STATUS CHECK WORKER
+# ============================================================
+
+def auto_status_check_worker():
+
+    print(
+        "🤖 AUTO STATUS CHECKER STARTED"
+    )
+
+    while True:
+
+        try:
+
+            # ------------------------------------------------
+            # Check API enabled
+            # ------------------------------------------------
+
+            if not flash_topup_enabled():
+
+                time.sleep(
+                    AUTO_STATUS_CHECK_INTERVAL
+                )
+
+                continue
+
+
+            # ------------------------------------------------
+            # Check all processing orders
+            # ------------------------------------------------
+
+            result = (
+                check_all_auto_orders()
+            )
+
+
+            if result.get("success"):
+
+                checked = result.get(
+                    "checked",
+                    0
+                )
+
+                completed = result.get(
+                    "completed",
+                    0
+                )
+
+                failed = result.get(
+                    "failed",
+                    0
+                )
+
+
+                if checked > 0:
+
+                    print(
+                        "🤖 AUTO STATUS CHECK:",
+                        f"Checked={checked},",
+                        f"Completed={completed},",
+                        f"Failed={failed}"
+                    )
+
+
+        except Exception as e:
+
+            print(
+                "[AUTO STATUS WORKER ERROR]",
+                e
+            )
+
+
+        # ----------------------------------------------------
+        # Wait before next check
+        # ----------------------------------------------------
+
+        time.sleep(
+            AUTO_STATUS_CHECK_INTERVAL
+        )
+
+
+# ============================================================
+# START AUTO STATUS WORKER
+# ============================================================
+
+def start_auto_status_worker():
+
+    global _auto_status_worker_started
+
+
+    with _auto_status_worker_lock:
+
+        if _auto_status_worker_started:
+
+            return
+
+
+        _auto_status_worker_started = True
+
+
+        worker = threading.Thread(
+
+            target=
+                auto_status_check_worker,
+
+            daemon=True
+
+        )
+
+
+        worker.start()
+
+
+        print(
+            "✅ Auto Status Worker "
+            "Background Thread Started"
+        )
+
+
+# ============================================================
+# MANUAL AUTO STATUS TEST
+# ============================================================
+
+@app.route(
+    "/admin/api/status-worker",
+    methods=["GET"]
+)
+def admin_status_worker():
+
+    if not admin_logged_in():
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Admin Only"
+
+        }), 403
+
+
+    return jsonify({
+
+        "success":
+            True,
+
+        "worker_running":
+            _auto_status_worker_started,
+
+        "interval":
+            AUTO_STATUS_CHECK_INTERVAL,
+
+        "message":
+            (
+                "Auto Status Checker "
+                "is running."
+                if _auto_status_worker_started
+                else
+                "Auto Status Checker "
+                "is not running."
+            )
+
+    })
+
+
+# ============================================================
+# ADMIN FORCE CHECK ONE ORDER
+# ============================================================
+
+@app.route(
+    "/admin/order/<int:order_id>/force-status",
+    methods=["POST"]
+)
+def admin_force_order_status(
+    order_id
+):
+
+    if not admin_logged_in():
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Admin Only"
+
+        }), 403
+
+
+    try:
+
+        result = (
+            check_auto_order_status(
+                order_id
+            )
+        )
+
+
+        return jsonify(
+            result
+        )
+
+
+    except Exception as e:
+
+        print(
+            "[FORCE STATUS ERROR]",
+            e
+        )
+
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                str(e)
+
+        }), 500
+
+
+# ============================================================
+# ADMIN AUTO CHECK SUMMARY
+# ============================================================
+
+@app.route(
+    "/admin/api/status-summary",
+    methods=["GET"]
+)
+def admin_status_summary():
+
+    if not admin_logged_in():
+
+        return jsonify({
+
+            "success":
+                False,
+
+            "message":
+                "Admin Only"
+
+        }), 403
+
+
+    conn = get_db()
+
+
+    total_processing = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM orders
+        WHERE game IN ('ML', 'PUBG')
+        AND provider_order_id IS NOT NULL
+        AND provider_order_id != ''
+        AND status IN (
+            'Pending',
+            'Processing'
+        )
+        """
+    ).fetchone()[0]
+
+
+    total_completed = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM orders
+        WHERE game IN ('ML', 'PUBG')
+        AND status = 'Completed'
+        """
+    ).fetchone()[0]
+
+
+    total_failed = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM orders
+        WHERE game IN ('ML', 'PUBG')
+        AND status = 'Failed'
+        """
+    ).fetchone()[0]
+
+
+    conn.close()
+
+
+    return jsonify({
+
+        "success":
+            True,
+
+        "processing":
+            total_processing,
+
+        "completed":
+            total_completed,
+
+        "failed":
+            total_failed,
+
+        "worker_running":
+            _auto_status_worker_started,
+
+        "interval":
+            AUTO_STATUS_CHECK_INTERVAL
+
+    })
+
+
+# ============================================================
+# START WORKER
+# ============================================================
+
+# Flask app စတင်တဲ့အချိန်
+# Background Worker တစ်ခါပဲ Start လုပ်မယ်။
+
+try:
+
+    start_auto_status_worker()
+
+except Exception as e:
+
+    print(
+        "[AUTO STATUS START ERROR]",
+        e
+    )
+
+
+# ============================================================
+# PART 15 END
+# ============================================================
+
+# ============================================================
+# EREN'S SHOP - PART 16 / 16
+# FINAL AUTO API INTEGRATION + STARTUP
+# ============================================================
+
+
+# ============================================================
+# API HEALTH CHECK
+# ============================================================
+
+@app.route(
+    "/admin/api/health",
+    methods=["GET"]
+)
+def admin_api_health():
+
+    if not admin_logged_in():
+
+        return jsonify({
+
+            "success": False,
+            "message": "Admin Only"
+
+        }), 403
+
+
+    try:
+
+        enabled = flash_topup_enabled()
+
+
+        return jsonify({
+
+            "success": True,
+
+            "api_enabled":
+                enabled,
+
+            "worker_running":
+                _auto_status_worker_started,
+
+            "check_interval":
+                AUTO_STATUS_CHECK_INTERVAL,
+
+            "message":
+                (
+                    "API is ready."
+                    if enabled
+                    else
+                    "API is disabled."
+                )
+
+        })
+
+
+    except Exception as e:
+
+        print(
+            "[API HEALTH ERROR]",
+            e
+        )
+
+
+        return jsonify({
+
+            "success": False,
+            "message": str(e)
+
+        }), 500
+
+
+# ============================================================
+# AUTO CHECK NOW
+# ============================================================
+
+@app.route(
+    "/admin/api/check-now",
+    methods=["POST"]
+)
+def admin_api_check_now():
+
+    if not admin_logged_in():
+
+        return jsonify({
+
+            "success": False,
+            "message": "Admin Only"
+
+        }), 403
+
+
+    try:
+
+        result = (
+            check_all_auto_orders()
+        )
+
+
+        return jsonify(
+            result
+        )
+
+
+    except Exception as e:
+
+        print(
+            "[CHECK NOW ERROR]",
+            e
+        )
+
+
+        return jsonify({
+
+            "success": False,
+            "message": str(e)
+
+        }), 500
+
+
+# ============================================================
+# GET ORDER STATUS
+# ============================================================
+
+@app.route(
+    "/admin/api/order/<int:order_id>",
+    methods=["GET"]
+)
+def admin_get_api_order(
+    order_id
+):
+
+    if not admin_logged_in():
+
+        return jsonify({
+
+            "success": False,
+            "message": "Admin Only"
+
+        }), 403
+
+
+    conn = get_db()
+
+
+    order = conn.execute(
+        """
+        SELECT
+            id,
+            username,
+            game,
+            package,
+            game_id,
+            server_id,
+            provider_order_id,
+            provider_status,
+            status
+        FROM orders
+        WHERE id = ?
+        """,
+        (order_id,)
+    ).fetchone()
+
+
+    conn.close()
+
+
+    if not order:
+
+        return jsonify({
+
+            "success": False,
+            "message": "Order မတွေ့ပါ။"
+
+        }), 404
+
+
+    return jsonify({
+
+        "success": True,
+
+        "order": {
+
+            "id":
+                order["id"],
+
+            "username":
+                order["username"],
+
+            "game":
+                order["game"],
+
+            "package":
+                order["package"],
+
+            "game_id":
+                order["game_id"],
+
+            "server_id":
+                order["server_id"],
+
+            "provider_order_id":
+                order["provider_order_id"],
+
+            "provider_status":
+                order["provider_status"],
+
+            "status":
+                order["status"]
+
+        }
+
+    })
+
+
+# ============================================================
+# STARTUP SAFETY
+# ============================================================
+
+def initialize_auto_api_system():
+
+    try:
+
+        print(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+
+        print(
+            "🚀 EREN'S SHOP AUTO API"
+        )
+
+        print(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+
+
+        # ----------------------------------------
+        # Check API configuration
+        # ----------------------------------------
+
+        try:
+
+            api_enabled = (
+                flash_topup_enabled()
+            )
+
+        except Exception as e:
+
+            api_enabled = False
+
+            print(
+                "[API CONFIG ERROR]",
+                e
+            )
+
+
+        print(
+            "🔌 API Enabled:",
+            api_enabled
+        )
+
+
+        # ----------------------------------------
+        # Start background worker
+        # ----------------------------------------
+
+        try:
+
+            start_auto_status_worker()
+
+        except Exception as e:
+
+            print(
+                "[WORKER START ERROR]",
+                e
+            )
+
+
+        print(
+            "🤖 Status Worker:",
+            _auto_status_worker_started
+        )
+
+
+        print(
+            "⏱️ Check Interval:",
+            AUTO_STATUS_CHECK_INTERVAL,
+            "seconds"
+        )
+
+
+        print(
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+
+
+    except Exception as e:
+
+        print(
+            "[AUTO API INITIALIZATION ERROR]",
+            e
+        )
+
+
+# ============================================================
+# INITIALIZE
+# ============================================================
+
+try:
+
+    initialize_auto_api_system()
+
+except Exception as e:
+
+    print(
+        "[FINAL INIT ERROR]",
+        e
+    )
+
+
+# ============================================================
+# FINAL API MESSAGE
+# ============================================================
+
+print(
+    "✅ EREN'S SHOP AUTO API SYSTEM READY"
+)
+
+
+# ============================================================
+# PART 16 END
 # ============================================================
