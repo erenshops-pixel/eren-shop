@@ -4755,6 +4755,7 @@ def status_checker_loop():
 
 
 def start_status_checker():
+    pass
 
     global _status_checker_started
 
