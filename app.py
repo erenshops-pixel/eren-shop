@@ -4775,14 +4775,6 @@ def start_status_checker():
     thread.start()
 
 
-# ============================================================
-# START BACKGROUND CHECKER
-# ============================================================
-
-start_status_checker()
-def start_status_checker():
-    # For now, just leave it empty or pass
-    pass
 
 # ============================================================
 # PART 7 END
