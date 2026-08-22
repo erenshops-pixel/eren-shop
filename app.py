@@ -236,6 +236,21 @@ def order():
 </html>
 """
 
+            <img src="/static/smileone.png">
+            <div class="name">Smile One PHP</div>
+        </a>
+    </div>
+    <div class="bottom-nav">
+        <a href="/dashboard"><span class="icon">🏠</span> Shop</a>
+        <a href="/wallet"><span class="icon">💰</span> Recharge</a>
+        <a href="/order" class="active"><span class="icon">📄</span> Order</a>
+        <a href="/orders"><span class="icon">📦</span> Order History</a>
+        <a href="/profile"><span class="icon">👤</span> Profile</a>
+    </div>
+</body>
+</html>
+"""
+
 @app.route("/packages/<game>", methods=["GET"])
 def packages(game):
     if "username" not in session:
