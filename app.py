@@ -38,6 +38,23 @@ app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 # SMILE ONE API Config
 # ==================================================
 
+FLASHTOPUP_API_ID = os.getenv("FLASHTOPUP_API_ID")
+FLASHTOPUP_API_KEY = os.getenv("FLASHTOPUP_API_KEY")
+FLASHTOPUP_BASE_URL = os.getenv("FLASHTOPUP_BASE_URL")
+FLASHTOPUP_SIGNATURE_METHOD = os.getenv("FLASHTOPUP_SIGNATURE_METHOD")
+
+def create_flashtopup_signature(method, path, body):
+    timestamp = str(int(time.time()))
+    nonce = str(uuid.uuid4())
+    
+    body_str = json.dumps(body, separators=(',', ':')) if body else ""
+    body_hash = hashlib.sha256(body_str.encode()).hexdigest()
+    
+    message = f"{method}\n{path}\n{timestamp}\n{nonce}\n{body_hash}\n"
+    signature = hmac.new(FLASHTOPUP_API_KEY.encode(), message.encode(), hashlib.sha256).hexdigest()
+    
+    return timestamp, nonce, signature
+
 # IMPORTANT: keep credentials in Railway Variables, never in GitHub.
 SMILE_ONE_API_URL = "https://jcplays.com/smilecoin/api"
 SMILE_ONE_UID = "70275119-162c-435b-8836-5971e82fc0fd"
