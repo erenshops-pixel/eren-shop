@@ -8,7 +8,7 @@ import hmac
 import hashlib
 import uuid
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template_string, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
@@ -37,6 +37,35 @@ def get_db():
 
 def now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def init_db():
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            balance REAL DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            game TEXT NOT NULL,
+            package TEXT NOT NULL,
+            game_id TEXT,
+            server_id TEXT,
+            telegram_username TEXT,
+            acc_mail TEXT,
+            payment TEXT,
+            status TEXT DEFAULT 'Pending',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
 
 def create_flashtopup_signature(method, path, body):
     timestamp = str(int(time.time()))
@@ -123,7 +152,7 @@ def flash_place_order(game, package, game_id, server_id, order_id):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-       def check_flashtopup_order_status(order_id):
+def check_flashtopup_order_status(order_id):
     path = "/api/reseller/v2/order/status"
     url = f"{FLASHTOPUP_BASE_URL}{path}"
     payload = {"reference_id": str(order_id)}
@@ -221,21 +250,6 @@ def order():
             <div class="name">Smile One BRL</div>
         </a>
         <a href="/packages/Smile One Coin PHP" class="card">
-            <img src="/static/smileone.png">
-            <div class="name">Smile One PHP</div>
-        </a>
-    </div>
-    <div class="bottom-nav">
-        <a href="/dashboard"><span class="icon">🏠</span> Shop</a>
-        <a href="/wallet"><span class="icon">💰</span> Recharge</a>
-        <a href="/order" class="active"><span class="icon">📄</span> Order</a>
-        <a href="/orders"><span class="icon">📦</span> Order History</a>
-        <a href="/profile"><span class="icon">👤</span> Profile</a>
-    </div>
-</body>
-</html>
-"""
-
             <img src="/static/smileone.png">
             <div class="name">Smile One PHP</div>
         </a>
@@ -411,15 +425,12 @@ def place_order():
                 message_type = "error"
                 if conn: conn.close()
 
-    # ... (HTML ပြန်ပေးတဲ့ အပိုင်း ဆက်သွားပါ)
-    return ""
-
-    return f"""
+                    return f"""
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Place Order</title>
     {STYLE}
     <style>
@@ -514,39 +525,10 @@ def place_order():
 </html>
 """
 
-if __name__ == "__main__":
+        if __name__ == "__main__":
     init_db()
     app.run(debug=True)
 
-    def init_db():
-    conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            balance REAL DEFAULT 0,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS orders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            game TEXT NOT NULL,
-            package TEXT NOT NULL,
-            game_id TEXT,
-            server_id TEXT,
-            telegram_username TEXT,
-            acc_mail TEXT,
-            payment TEXT,
-            status TEXT DEFAULT 'Pending',
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-if __name__ == "__main__":
+        if __name__ == "__main__":
     init_db()
     app.run(debug=True)
